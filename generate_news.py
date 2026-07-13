@@ -1,12 +1,17 @@
+import os
+import re
+import json
+from datetime import datetime, timezone
+from urllib.parse import urljoin
+
 import requests
 from bs4 import BeautifulSoup
 from gtts import gTTS
-from datetime import datetime, timezone
-from urllib.parse import urljoin
-import json
-import os
-import re
 
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
 POLIMER_URL = "https://www.polimernews.com/"
 
@@ -15,17 +20,22 @@ AUDIO_URL = (
     "tamil-alexa-news/latest-news.mp3"
 )
 
+MAX_HEADLINES_PER_CATEGORY = 5
+
 
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 Chrome/150 Safari/537.36"
+        "AppleWebKit/537.36 "
+        "(KHTML, like Gecko) "
+        "Chrome/150.0.0.0 Safari/537.36"
     )
 }
 
 
-# Categories Alexa should read.
-# Website label -> Alexa spoken introduction
+# ============================================================
+# POLIMER NEWS CATEGORIES
+# ============================================================
 
 CATEGORIES = {
     "தமிழ்நாடு": "தமிழ்நாடு செய்திகள்",
@@ -43,16 +53,24 @@ CATEGORIES = {
 }
 
 
-def clean_text(text):
+# ============================================================
+# TEXT FUNCTIONS
+# ============================================================
 
-    text = " ".join(
-        text.split()
-    )
+def clean_text(text):
+    """
+    Remove unnecessary spaces from text.
+    """
+
+    text = " ".join(text.split())
 
     return text.strip()
 
 
 def contains_tamil(text):
+    """
+    Check whether text contains Tamil characters.
+    """
 
     return bool(
         re.search(
@@ -63,6 +81,9 @@ def contains_tamil(text):
 
 
 def clean_for_speech(text):
+    """
+    Clean headline text for Tamil text-to-speech.
+    """
 
     text = clean_text(text)
 
@@ -71,14 +92,12 @@ def clean_for_speech(text):
         "”",
         "‘",
         "’",
-        "‟"
+        "‟",
+        '"'
     ]
 
     for mark in quotation_marks:
-        text = text.replace(
-            mark,
-            ""
-        )
+        text = text.replace(mark, "")
 
     text = text.replace(
         "|",
@@ -115,12 +134,16 @@ def clean_for_speech(text):
         text
     )
 
-    return text.strip(
-        " ."
-    )
+    return text.strip(" .")
 
 
 def valid_headline(text):
+    """
+    Validate whether text looks like a Tamil news headline.
+    """
+
+    if not text:
+        return False
 
     if not contains_tamil(text):
         return False
@@ -128,22 +151,26 @@ def valid_headline(text):
     if len(text) < 20:
         return False
 
-    if len(text) > 250:
+    if len(text) > 300:
         return False
 
-    blocked = [
+    blocked_words = [
         "முகப்பு",
         "livetv",
+        "live tv",
         "privacy",
         "copyright",
         "எங்களை பற்றி",
-        "தொடர்புக்கு"
+        "தொடர்புக்கு",
+        "facebook",
+        "twitter",
+        "instagram",
+        "youtube"
     ]
 
     text_lower = text.casefold()
 
-    for word in blocked:
-
+    for word in blocked_words:
         if word.casefold() in text_lower:
             return False
 
@@ -151,8 +178,11 @@ def valid_headline(text):
 
 
 def remove_duplicates(headlines):
+    """
+    Remove duplicate headlines.
+    """
 
-    unique = []
+    unique_headlines = []
 
     seen = set()
 
@@ -162,23 +192,34 @@ def remove_duplicates(headlines):
             headline
         )
 
+        if not headline:
+            continue
+
         key = headline.casefold()
 
-        if key not in seen:
+        if key in seen:
+            continue
 
-            seen.add(key)
+        seen.add(key)
 
-            unique.append(
-                headline
-            )
+        unique_headlines.append(
+            headline
+        )
 
-    return unique
+    return unique_headlines
 
+
+# ============================================================
+# GET CATEGORY LINKS
+# ============================================================
 
 def get_category_links():
+    """
+    Find category links from the Polimer News homepage.
+    """
 
     print(
-        "Getting Polimer category links..."
+        "\nGetting Polimer category links..."
     )
 
     response = requests.get(
@@ -210,18 +251,41 @@ def get_category_links():
 
         if text in CATEGORIES:
 
-            category_links[text] = urljoin(
+            category_url = urljoin(
                 POLIMER_URL,
                 link["href"]
             )
 
+            category_links[text] = (
+                category_url
+            )
+
+    print(
+        "\nCategory links found:",
+        len(category_links)
+    )
+
+    for category, url in category_links.items():
+
+        print(
+            f"CATEGORY: {category}"
+        )
+
+        print(
+            f"URL: {url}"
+        )
+
     return category_links
 
 
-def extract_category_headlines(
-    category,
-    url
-):
+# ============================================================
+# EXTRACT CATEGORY HEADLINES
+# ============================================================
+
+def extract_category_headlines(category, url):
+    """
+    Extract maximum 5 headlines from one category.
+    """
 
     print(
         f"\nGetting {category} headlines..."
@@ -253,23 +317,36 @@ def extract_category_headlines(
             )
         )
 
-        if valid_headline(text):
+        if not valid_headline(text):
+            continue
 
-            if text not in CATEGORIES:
+        if text in CATEGORIES:
+            continue
 
-                headlines.append(
-                    text
-                )
+        headlines.append(
+            text
+        )
 
     headlines = remove_duplicates(
-    headlines
-)
+        headlines
+    )
 
-# Keep only the latest 5 headlines
-return headlines[:5]
+    # Maximum 5 headlines per category
+    headlines = headlines[
+        :MAX_HEADLINES_PER_CATEGORY
+    ]
 
+    return headlines
+
+
+# ============================================================
+# COLLECT POLIMER NEWS
+# ============================================================
 
 def collect_polimer_news():
+    """
+    Collect headlines category by category.
+    """
 
     category_links = get_category_links()
 
@@ -280,52 +357,82 @@ def collect_polimer_news():
         if category not in category_links:
 
             print(
-                f"WARNING: Category not found: "
-                f"{category}"
+                "\nWARNING:"
+            )
+
+            print(
+                f"Category not found: {category}"
             )
 
             continue
 
-        headlines = extract_category_headlines(
-            category,
-            category_links[category]
-        )
+        category_url = category_links[
+            category
+        ]
+
+        try:
+
+            headlines = (
+                extract_category_headlines(
+                    category,
+                    category_url
+                )
+            )
+
+        except Exception as error:
+
+            print(
+                f"\nERROR getting {category}:"
+            )
+
+            print(error)
+
+            continue
 
         news[category] = headlines
 
         print(
-            f"{category}: "
+            f"\n{category}: "
             f"{len(headlines)} headlines"
         )
 
         for number, headline in enumerate(
             headlines,
-            1
+            start=1
         ):
 
             print(
-                f"{category} {number}:",
-                headline
+                f"{category} {number}: "
+                f"{headline}"
             )
 
     return news
 
 
+# ============================================================
+# CREATE TAMIL SPEECH
+# ============================================================
+
 def create_speech(news):
+    """
+    Build category-wise Tamil speech.
+    """
 
-    parts = []
+    speech_parts = []
 
-    parts.append(
-        "வணக்கம்."
+    speech_parts.append(
+        "வணக்கம்"
     )
 
-    parts.append(
-        "பாலிமர் செய்தித் தலைப்புகள்."
+    speech_parts.append(
+        "பாலிமர் செய்தித் தலைப்புகள்"
     )
 
     first_category = True
 
-    for category, spoken_name in CATEGORIES.items():
+    for category, spoken_name in (
+        CATEGORIES.items()
+    ):
 
         headlines = news.get(
             category,
@@ -337,40 +444,49 @@ def create_speech(news):
 
         if first_category:
 
-            parts.append(
-                f"முதலில் {spoken_name}."
+            speech_parts.append(
+                f"முதலில் {spoken_name}"
             )
 
             first_category = False
 
         else:
 
-            parts.append(
-                f"அடுத்து {spoken_name}."
+            speech_parts.append(
+                f"அடுத்து {spoken_name}"
             )
 
         for headline in headlines:
 
-            parts.append(
+            speech_parts.append(
                 headline
             )
 
-    parts.append(
+    speech_parts.append(
         "இத்துடன் பாலிமர் "
         "செய்தித் தலைப்புகள் "
-        "நிறைவடைந்தன."
+        "நிறைவடைந்தன"
     )
 
-    parts.append(
-        "நன்றி."
+    speech_parts.append(
+        "நன்றி"
     )
 
-    return ". ".join(
-        parts
+    speech = ". ".join(
+        speech_parts
     )
 
+    return speech
+
+
+# ============================================================
+# CREATE TAMIL AUDIO
+# ============================================================
 
 def create_audio(speech):
+    """
+    Generate Tamil MP3 using gTTS.
+    """
 
     os.makedirs(
         "docs",
@@ -379,6 +495,11 @@ def create_audio(speech):
 
     print(
         "\nCreating Tamil audio..."
+    )
+
+    print(
+        "Speech characters:",
+        len(speech)
     )
 
     tts = gTTS(
@@ -391,8 +512,29 @@ def create_audio(speech):
         "docs/latest-news.mp3"
     )
 
+    audio_size = os.path.getsize(
+        "docs/latest-news.mp3"
+    )
+
+    print(
+        "Audio generated successfully."
+    )
+
+    print(
+        "Audio size:",
+        audio_size,
+        "bytes"
+    )
+
+
+# ============================================================
+# CREATE ALEXA FLASH BRIEFING FEED
+# ============================================================
 
 def create_feed():
+    """
+    Generate Alexa Flash Briefing JSON feed.
+    """
 
     now = datetime.now(
         timezone.utc
@@ -400,7 +542,9 @@ def create_feed():
 
     feed = [
         {
-            "uid": "polimer-category-news",
+            "uid": (
+                "polimer-category-news"
+            ),
             "updateDate": now.strftime(
                 "%Y-%m-%dT%H:%M:%S.0Z"
             ),
@@ -409,9 +553,16 @@ def create_feed():
             ),
             "mainText": "",
             "streamUrl": AUDIO_URL,
-            "redirectionUrl": POLIMER_URL
+            "redirectionUrl": (
+                POLIMER_URL
+            )
         }
     ]
+
+    os.makedirs(
+        "docs",
+        exist_ok=True
+    )
 
     with open(
         "docs/feed.json",
@@ -426,8 +577,28 @@ def create_feed():
             indent=2
         )
 
+    print(
+        "\nAlexa feed generated successfully."
+    )
+
+
+# ============================================================
+# MAIN PROGRAM
+# ============================================================
 
 def main():
+
+    print(
+        "================================"
+    )
+
+    print(
+        "POLIMER CATEGORY NEWS GENERATOR"
+    )
+
+    print(
+        "================================"
+    )
 
     news = collect_polimer_news()
 
@@ -436,15 +607,43 @@ def main():
         for headlines in news.values()
     )
 
+    categories_with_news = sum(
+        1
+        for headlines in news.values()
+        if headlines
+    )
+
     print(
-        "\nTOTAL POLIMER HEADLINES:",
+        "\n================================"
+    )
+
+    print(
+        "NEWS SUMMARY"
+    )
+
+    print(
+        "================================"
+    )
+
+    print(
+        "Categories with news:",
+        categories_with_news
+    )
+
+    print(
+        "Total Polimer headlines:",
         total_headlines
+    )
+
+    print(
+        "Maximum headlines per category:",
+        MAX_HEADLINES_PER_CATEGORY
     )
 
     if total_headlines == 0:
 
         raise RuntimeError(
-            "No Polimer headlines found"
+            "No Polimer headlines found."
         )
 
     speech = create_speech(
@@ -452,7 +651,7 @@ def main():
     )
 
     print(
-        "Total speech characters:",
+        "\nTotal speech characters:",
         len(speech)
     )
 
@@ -463,11 +662,22 @@ def main():
     create_feed()
 
     print(
-        "\nCompleted successfully."
+        "\n================================"
     )
 
     print(
-        "Audio:",
+        "COMPLETED SUCCESSFULLY"
+    )
+
+    print(
+        "================================"
+    )
+
+    print(
+        "Audio URL:"
+    )
+
+    print(
         AUDIO_URL
     )
 
