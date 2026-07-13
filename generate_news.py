@@ -10,6 +10,11 @@ import re
 POLIMER_URL = "https://www.polimernews.com/"
 PUTHIYA_URL = "https://www.puthiyathalaimurai.com/"
 
+AUDIO_URL = (
+    "https://Dhanushyan2508.github.io/"
+    "tamil-alexa-news/latest-news.mp3"
+)
+
 
 HEADERS = {
     "User-Agent": (
@@ -25,7 +30,65 @@ def clean_text(text):
 
 
 def contains_tamil(text):
-    return bool(re.search(r"[\u0B80-\u0BFF]", text))
+    return bool(
+        re.search(r"[\u0B80-\u0BFF]", text)
+    )
+
+
+def clean_for_speech(text):
+    """
+    Make website headline text sound better
+    when spoken by Tamil TTS.
+    """
+
+    text = clean_text(text)
+
+    # Remove website-style quotation marks
+    text = text.replace("“", "")
+    text = text.replace("”", "")
+    text = text.replace("‘", "")
+    text = text.replace("’", "")
+    text = text.replace("‟", "")
+
+    # Replace pipes with pauses
+    text = text.replace("|", ". ")
+
+    # Remove repeated dots
+    text = re.sub(
+        r"\.{2,}",
+        ".",
+        text
+    )
+
+    # Remove repeated exclamation marks
+    text = re.sub(
+        r"!+",
+        ".",
+        text
+    )
+
+    # Remove repeated question marks
+    text = re.sub(
+        r"\?+",
+        "?",
+        text
+    )
+
+    # Clean spaces before punctuation
+    text = re.sub(
+        r"\s+([.,?!])",
+        r"\1",
+        text
+    )
+
+    # Clean repeated spaces
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
+
+    return text.strip(" .")
 
 
 def remove_duplicates(headlines):
@@ -33,7 +96,9 @@ def remove_duplicates(headlines):
     seen = set()
 
     for headline in headlines:
-        headline = clean_text(headline)
+        headline = clean_for_speech(
+            headline
+        )
 
         key = headline.casefold()
 
@@ -45,6 +110,7 @@ def remove_duplicates(headlines):
 
 
 def valid_headline(text):
+
     if not contains_tamil(text):
         return False
 
@@ -56,18 +122,18 @@ def valid_headline(text):
 
     blocked_words = [
         "முகப்பு",
-        "வீடியோ",
-        "லைவ்",
         "தேடல்",
         "தொடர்புக்கு",
         "எங்களை பற்றி",
-        "privacy",
-        "copyright"
+        "privacy policy",
+        "copyright",
+        "terms and conditions"
     ]
 
     text_lower = text.casefold()
 
     for word in blocked_words:
+
         if word.casefold() in text_lower:
             return False
 
@@ -75,6 +141,7 @@ def valid_headline(text):
 
 
 def extract_headlines(url):
+
     response = requests.get(
         url,
         headers=HEADERS,
@@ -93,24 +160,32 @@ def extract_headlines(url):
     for tag in soup.find_all(
         ["h1", "h2", "h3", "h4"]
     ):
+
         text = clean_text(
-            tag.get_text(" ", strip=True)
+            tag.get_text(
+                " ",
+                strip=True
+            )
         )
 
         if valid_headline(text):
             headlines.append(text)
 
-    return remove_duplicates(headlines)
+    return remove_duplicates(
+        headlines
+    )
 
 
 def create_speech(
     polimer_headlines,
     puthiya_headlines
 ):
+
     parts = []
 
     parts.append(
-        "வணக்கம். இன்றைய செய்தித் தலைப்புகள்."
+        "வணக்கம். "
+        "இன்றைய செய்தித் தலைப்புகள்."
     )
 
     parts.append(
@@ -121,8 +196,8 @@ def create_speech(
         parts.append(headline)
 
     parts.append(
-        "இத்துடன் பாலிமர் செய்தித் தலைப்புகள் "
-        "நிறைவடைந்தன."
+        "இத்துடன் பாலிமர் "
+        "செய்தித் தலைப்புகள் நிறைவடைந்தன."
     )
 
     parts.append(
@@ -133,64 +208,41 @@ def create_speech(
         parts.append(headline)
 
     parts.append(
-        "இத்துடன் இன்றைய செய்தித் தலைப்புகள் "
-        "நிறைவடைந்தன."
+        "இத்துடன் புதிய தலைமுறை "
+        "செய்தித் தலைப்புகள் நிறைவடைந்தன."
+    )
+
+    parts.append(
+        "நன்றி. மீண்டும் அடுத்த "
+        "செய்தி நேரத்தில் சந்திப்போம்."
     )
 
     return ". ".join(parts)
 
 
-def main():
-    print("Getting Polimer headlines...")
-
-    polimer = extract_headlines(
-        POLIMER_URL
-    )
-
-    print(
-        "Polimer headlines:",
-        len(polimer)
-    )
-
-    for headline in polimer:
-        print("POLIMER:", headline)
-
-    print(
-        "\nGetting Puthiya Thalaimurai headlines..."
-    )
-
-    puthiya = extract_headlines(
-        PUTHIYA_URL
-    )
-
-    print(
-        "Puthiya headlines:",
-        len(puthiya)
-    )
-
-    for headline in puthiya:
-        print("PUTHIYA:", headline)
-
-    speech = create_speech(
-        polimer,
-        puthiya
-    )
+def create_audio(speech):
 
     os.makedirs(
-        "public",
+        "docs",
         exist_ok=True
     )
 
-    print("\nCreating Tamil MP3...")
+    print(
+        "\nCreating Tamil news audio..."
+    )
 
     tts = gTTS(
         text=speech,
-        lang="ta"
+        lang="ta",
+        slow=False
     )
 
     tts.save(
-        "public/latest-news.mp3"
+        "docs/latest-news.mp3"
     )
+
+
+def create_feed():
 
     now = datetime.now(
         timezone.utc
@@ -202,12 +254,10 @@ def main():
             "updateDate": now.strftime(
                 "%Y-%m-%dT%H:%M:%S.0Z"
             ),
-            "titleText": "Tamil News Headlines",
-            "streamUrl": (
-                "https://Dhanushyan2508.github.io/"
-                "tamil-alexa-news/"
-                "latest-news.mp3"
+            "titleText": (
+                "Tamil News Headlines"
             ),
+            "streamUrl": AUDIO_URL,
             "redirectionUrl": (
                 "https://www.polimernews.com/"
             )
@@ -215,10 +265,11 @@ def main():
     ]
 
     with open(
-        "public/feed.json",
+        "docs/feed.json",
         "w",
         encoding="utf-8"
     ) as file:
+
         json.dump(
             feed,
             file,
@@ -226,7 +277,99 @@ def main():
             indent=2
         )
 
-    print("\nCompleted successfully.")
+
+def main():
+
+    print(
+        "Getting Polimer headlines..."
+    )
+
+    polimer = extract_headlines(
+        POLIMER_URL
+    )
+
+    print(
+        "Polimer headlines:",
+        len(polimer)
+    )
+
+    for number, headline in enumerate(
+        polimer,
+        1
+    ):
+
+        print(
+            f"POLIMER {number}:",
+            headline
+        )
+
+
+    print(
+        "\nGetting Puthiya "
+        "Thalaimurai headlines..."
+    )
+
+    puthiya = extract_headlines(
+        PUTHIYA_URL
+    )
+
+    print(
+        "Puthiya headlines:",
+        len(puthiya)
+    )
+
+    for number, headline in enumerate(
+        puthiya,
+        1
+    ):
+
+        print(
+            f"PUTHIYA {number}:",
+            headline
+        )
+
+
+    if not polimer and not puthiya:
+
+        raise RuntimeError(
+            "No Tamil news headlines found"
+        )
+
+
+    speech = create_speech(
+        polimer,
+        puthiya
+    )
+
+
+    print(
+        "\nTotal speech characters:",
+        len(speech)
+    )
+
+
+    create_audio(
+        speech
+    )
+
+
+    create_feed()
+
+
+    print(
+        "\nCompleted successfully."
+    )
+
+    print(
+        "Audio:",
+        AUDIO_URL
+    )
+
+    print(
+        "Feed:",
+        "https://Dhanushyan2508.github.io/"
+        "tamil-alexa-news/feed.json"
+    )
 
 
 if __name__ == "__main__":
