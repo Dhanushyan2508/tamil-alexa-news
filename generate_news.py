@@ -262,10 +262,11 @@ def extract_category_headlines(
                 )
 
     headlines = remove_duplicates(
-        headlines
-    )
+    headlines
+)
 
-    return headlines
+# Keep only the latest 5 headlines
+return headlines[:5]
 
 
 def collect_polimer_news():
