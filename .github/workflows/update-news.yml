@@ -7,11 +7,21 @@ on:
     - cron: "0 * * * *"
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
-  update-news:
+  build-and-deploy:
     runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Checkout repository
@@ -30,13 +40,19 @@ jobs:
         run: |
           python generate_news.py
 
-      - name: Commit generated files
+      - name: Show generated files
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo "Generated files:"
+          find docs -maxdepth 2 -type f -print
 
-          git add -f docs/
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
 
-          git diff --cached --quiet || git commit -m "Update Tamil news"
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "./docs"
 
-          git push
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
