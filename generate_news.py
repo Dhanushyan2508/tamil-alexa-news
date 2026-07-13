@@ -257,6 +257,7 @@ def create_feed():
             "titleText": (
                 "Tamil News Headlines"
             ),
+            "mainText": "",
             "streamUrl": AUDIO_URL,
             "redirectionUrl": (
                 "https://www.polimernews.com/"
